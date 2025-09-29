@@ -55,20 +55,59 @@ float s_square(const Square& name){
     return name.a * name.a;
 }
 
-bool in_circle(Circle& name, Point point){
+bool in_circle(const Circle& name, Point point){
     return (abs(name.centre.x - point.x) < name.r) && (abs(name.centre.y - point.y) < name.r);
 }
 
-bool in_square(Square& name, Point point){
+bool in_square(const Square& name, Point point){
     return (name.left_point.x < point.x) && ((name.left_point.x + name.a) > point.x) && (name.left_point.y > point.y) && ((name.left_point.y - name.a) < point.y);
 }   
 
-bool on_circle(Circle& name, Point point){
+bool on_circle(const Circle& name, Point point){
     return abs(name.centre.x - point.x) * abs(name.centre.x - point.x) + abs(name.centre.y - point.y) * abs(name.centre.y - point.y) == name.r * name.r;
 }
 
-bool on_square(Square& name, Point point){
+bool on_square(const Square& name, Point point){
     bool lines_x = ((name.left_point.y == point.y)||(name.left_point.y - name.a == point.y)) && (name.left_point.x <= point.x) && ((name.left_point.x + name.a) >= point.x);
     bool lines_y = ((name.left_point.x == point.x)||(name.left_point.x + name.a == point.x)) && (name.left_point.y >= point.y) && ((name.left_point.y - name.a) <= point.y);
     return lines_x || lines_y ;
 }   
+
+bool intersection_of_circles(const Circle& name_1, const Circle& name_2){
+    float x = name_1.centre.x - name_2.centre.x;
+    float y = name_1.centre.y - name_2.centre.y;
+    return sqrt(x * x + y * y) < (name_1.r + name_2.r);
+}
+
+bool intersection_of_square(const Square& name_1, const Square& name_2){
+    Point mus_1[4], mus_2[4];
+    
+    // Квадрат 1
+    mus_1[0] = name_1.left_point; // левый верхний
+    mus_1[1] = name_1.left_point; // правый верхний
+    mus_1[1].x += name_1.a;
+    mus_1[2] = name_1.left_point; // левый нижний
+    mus_1[2].y -= name_1.a;
+    mus_1[3] = name_1.left_point; // правый нижний
+    mus_1[3].x += name_1.a;
+    mus_1[3].y -= name_1.a;
+    
+    // Квадрат 2
+    mus_2[0] = name_2.left_point; // левый верхний
+    mus_2[1] = name_2.left_point; // правый верхний
+    mus_2[1].x += name_2.a;
+    mus_2[2] = name_2.left_point; // левый нижний
+    mus_2[2].y -= name_2.a;
+    mus_2[3] = name_2.left_point; // правый нижний
+    mus_2[3].x += name_2.a;
+    mus_2[3].y -= name_2.a;
+    
+    bool flag_1 = false;
+    for (int i = 0; i < 4; i++){
+        if (in_square(name_1, mus_2[i]) || in_square(name_2, mus_1[i])){
+            flag_1 = true;
+            break;
+        }
+    }
+    return flag_1;
+}
