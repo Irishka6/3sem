@@ -18,3 +18,4 @@ bool on_circle(const Circle& name, Point point);
 bool on_square(const Square& name, Point point);
 bool intersection_of_circles(const Circle& name_1, const Circle& name_2);
 bool intersection_of_square(const Square& name_1, const Square& name_2);
+bool intersection(const Circle& name_1, const Square& name_2);

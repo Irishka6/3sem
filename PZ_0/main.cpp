@@ -7,8 +7,8 @@ int main(){
     // Point name;
     //get_point(name);
     // print_point(name);
-    // Circle circl;
-    // get_circle(circl);
+    Circle circl;
+    get_circle(circl);
     // print_circle(circl);
     // std::cout << length_circle(circl) << std::endl;
     // std::cout << s_circle(circl) << std::endl;
@@ -25,10 +25,11 @@ int main(){
     // print_circle(circl);
     // print_circle(circl_2);
     // std::cout << "intersection of circles" << intersection_of_circles(circl, circl_2)  << std::endl;
-    Square square_2;
-    get_square(square_2);
-    print_square(square);
-    print_square(square_2);
-    std::cout << "intersection of square " << intersection_of_square(square, square_2)  << std::endl;
+    // Square square_2;
+    // get_square(square_2);
+    // print_square(square);
+    // print_square(square_2);
+    // std::cout << "intersection of square " << intersection_of_square(square, square_2)  << std::endl;
+    std::cout << intersection(circl, square);
     return 0;
 }

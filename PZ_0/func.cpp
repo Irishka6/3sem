@@ -101,7 +101,7 @@ bool intersection_of_square(const Square& name_1, const Square& name_2){
     mus_2[3] = name_2.left_point; // правый нижний
     mus_2[3].x += name_2.a;
     mus_2[3].y -= name_2.a;
-    
+
     bool flag_1 = false;
     for (int i = 0; i < 4; i++){
         if (in_square(name_1, mus_2[i]) || in_square(name_2, mus_1[i])){
@@ -110,4 +110,41 @@ bool intersection_of_square(const Square& name_1, const Square& name_2){
         }
     }
     return flag_1;
+}
+
+bool intersection(const Circle& name_1, const Square& name_2){
+    Point mus_2[4];
+    
+    // Квадрат 2
+    mus_2[0] = name_2.left_point; // левый верхний
+    mus_2[1] = name_2.left_point; // правый верхний
+    mus_2[1].x += name_2.a;
+    mus_2[2] = name_2.left_point; // левый нижний
+    mus_2[2].y -= name_2.a;
+    mus_2[3] = name_2.left_point; // правый нижний
+    mus_2[3].x += name_2.a;
+    mus_2[3].y -= name_2.a;
+    for (int i = 0; i < 4; i++){
+        if (in_circle(name_1, mus_2[i])){
+            return true;
+        }
+    }
+
+    if (in_square(name_2, name_1.centre)) {
+        return true;
+    }
+
+    float closestX = name_1.centre.x;
+    float closestY = name_1.centre.y;
+    
+    if (name_1.centre.x < name_2.left_point.x) closestX = name_2.left_point.x;
+    else if (name_1.centre.x > name_2.left_point.x + name_2.a) closestX = name_2.left_point.x + name_2.a;
+    
+    if (name_1.centre.y > name_2.left_point.y) closestY = name_2.left_point.y;
+    else if (name_1.centre.y < name_2.left_point.y - name_2.a) closestY = name_2.left_point.y - name_2.a;
+    
+    float dx = name_1.centre.x - closestX;
+    float dy = name_1.centre.y - closestY;
+    
+    return (dx * dx + dy * dy) < (name_1.r * name_1.r);
 }
