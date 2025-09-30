@@ -19,3 +19,6 @@ bool on_square(const Square& name, Point point);
 bool intersection_of_circles(const Circle& name_1, const Circle& name_2);
 bool intersection_of_square(const Square& name_1, const Square& name_2);
 bool intersection(const Circle& name_1, const Square& name_2);
+bool circl_in_circl(const Circle& name_1, const Circle& name_2);
+bool square_in_square(const Square& name_1, const Square& name_2);
+Point *mus_poin(const Square& name_1);
