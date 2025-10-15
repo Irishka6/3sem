@@ -3,6 +3,18 @@
 #include <iostream>
 # define M_PI           3.14159265358979323846  /* pi */
 
+void mus_poin(const Square& name_1, Point mus_1[4]){
+    // Квадрат
+    mus_1[0] = name_1.left_point; // левый верхний
+    mus_1[1] = name_1.left_point; // правый верхний
+    mus_1[1].x += name_1.a;
+    mus_1[2] = name_1.left_point; // левый нижний
+    mus_1[2].y -= name_1.a;
+    mus_1[3] = name_1.left_point; // правый нижний
+    mus_1[3].x += name_1.a;
+    mus_1[3].y -= name_1.a;
+}
+
 void get_point(Point& name){
     std::cout << "Coordinates of the point: x y" << std::endl;
     std::cin >> name.x;
@@ -56,7 +68,9 @@ float s_square(const Square& name){
 }
 
 bool in_circle(const Circle& name, Point point){
-    return (abs(name.centre.x - point.x) < name.r) && (abs(name.centre.y - point.y) < name.r);
+    float dx = name.centre.x - point.x;
+    float dy = name.centre.y - point.y;
+    return (dx * dx + dy * dy) < (name.r * name.r);
 }
 
 bool in_square(const Square& name, Point point){
@@ -158,24 +172,15 @@ bool square_in_square(const Square& name_1, const Square& name_2){
 bool square_in_circle(const Square& name_1, const Circle& name_2){
     Point mus[4];
     mus_poin(name_1, mus);
-    for (int i = 1; i <= 4; i++){
-        
+    for (int i = 0; i < 4; i++){
+        if (!(in_circle(name_2, mus[i]) || on_circle(name_2, mus[i]))){
+            return false;
+        }
     }
-    return in_circle(name_2, mus[0]) && (name_2.r * 2 >= name_1.a * sqrt(2)); 
+    return true; 
 }
 
 bool circle_in_square(const Square& name_1, const Circle& name_2){
     return in_square(name_1, name_2.centre) && (name_2.r * 2 <= name_1.a); 
 }
 
-void mus_poin(const Square& name_1, Point mus_1[4]){
-    // Квадрат
-    mus_1[0] = name_1.left_point; // левый верхний
-    mus_1[1] = name_1.left_point; // правый верхний
-    mus_1[1].x += name_1.a;
-    mus_1[2] = name_1.left_point; // левый нижний
-    mus_1[2].y -= name_1.a;
-    mus_1[3] = name_1.left_point; // правый нижний
-    mus_1[3].x += name_1.a;
-    mus_1[3].y -= name_1.a;
-}
