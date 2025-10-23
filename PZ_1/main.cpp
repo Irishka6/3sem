@@ -1,6 +1,8 @@
 #include <iostream>
 #include <cstdlib>  // для abs()
 
+// сылка на гит
+// https://github.com/Irishka6/3sem/tree/master/PZ_1
 
 class Muss {
 private:
