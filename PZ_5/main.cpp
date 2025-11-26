@@ -55,7 +55,7 @@ public:
     bool setvalue(int value, int index) {
         if (abs(value) > 100) {
             std::cout << "Number not in [-100;100]" << std::endl;
-            return false;
+            throw std::invalid_argument("Invalid argument");
         }
         if (index >= capacity) {
             resize(index + 1);
@@ -70,8 +70,9 @@ public:
     // Геттер
     int get(int index) const {
         if (index < 0 || index >= size) {
-            std::cout << "Index out of bounds" << std::endl;
-            return 0;
+            // std::cout << "Index out of bounds" << std::endl;
+            // return 0;
+            throw std::out_of_range("Invalid index");
         }
         return data[index];
     }
@@ -255,44 +256,26 @@ void exportArrayDataPtr(const Muss* array) {
 }
 
 int main() {
-    std::cout << "=== Array Export Demonstration ===" << std::endl;
-    
-    // Создаем тестовые данные
-    int testData[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    int testSize = 10;
+    try{
+        std::cout << "=== Array Export Demonstration ===" << std::endl;
+        
+        // Создаем тестовые данные
+        int testData[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+        int testSize = 10;
 
-    // Создаем объекты разных типов
-    ArrTxt txtArray(testData, testSize);
-    ArrCSV csvArray(testData, testSize);
-    Muss baseArray(testData, testSize);
+        // Создаем объекты разных типов
+        ArrTxt txtArray(testData, testSize);
+        ArrCSV csvArray(testData, testSize);
+        Muss baseArray(testData, testSize);
+        baseArray.get(19);
 
-    std::cout << "\n1. Testing ArrTxt export:" << std::endl;
-    txtArray.print_data();
-    txtArray.exportData();  // Вызов через объект
-
-    std::cout << "\n2. Testing ArrCSV export:" << std::endl;
-    csvArray.print_data();
-    csvArray.exportData();  // Вызов через объект
-
-    std::cout << "\n3. Testing polymorphism with references:" << std::endl;
-    exportArrayData(txtArray);  // Будет вызван ArrTxt::exportData()
-    exportArrayData(csvArray);  // Будет вызван ArrCSV::exportData()
-    exportArrayData(baseArray); // Будет вызван Muss::exportData()
-
-    std::cout << "\n4. Testing polymorphism with pointers:" << std::endl;
-    Muss* arrays[] = {&txtArray, &csvArray, &baseArray};
-    
-    for (int i = 0; i < 3; i++) {
-        exportArrayDataPtr(arrays[i]);
+        std::cout << "\n1. Testing ArrTxt export:" << std::endl;
+        txtArray.print_data();
+        txtArray.exportData();  // Вызов через объект
+    } catch (std::invalid_argument& e){
+        std::cout << e.what() << std::endl;
+    } catch (std::out_of_range& e){
+        std::cout << e.what() << std::endl;
     }
-
-    std::cout << "\n5. Testing with different data:" << std::endl;
-    int randomData[] = {5, -2, 8, 1, -9, 3, 7, -4, 6};
-    ArrTxt randomTxtArray(randomData, 9);
-    ArrCSV randomCsvArray(randomData, 9);
-    
-    randomTxtArray.exportData();
-    randomCsvArray.exportData();
-
     return 0;
 }
