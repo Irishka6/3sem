@@ -1,298 +1,450 @@
 #include <iostream>
-#include <cstdlib>
-#include <algorithm>
-#include <vector>
 #include <fstream>
-#include <chrono>
-#include <iomanip>
+#include <vector>
+#include <string>
 #include <sstream>
+#include <cstdint>
+#include <algorithm>
+#include <numeric>
+#include <random>
 
-class Muss {
-protected:  
-    int *data;
-    int size;
-    int capacity;
+#ifdef _WIN32
+    #include <windows.h>
+    #include <direct.h>
+#else
+    #include <sys/stat.h>
+    #include <sys/types.h>
+#endif
 
-public:
-    // Конструктор по умолчанию
-    Muss(int int_capacity = 10) : capacity(int_capacity), size(0) {
-        data = new int[capacity]();
-    }
+using namespace std;
 
-    // Конструктор с массивом
-    Muss(int *new_data, int new_size, int int_capacity = 10) 
-        : capacity(std::max(int_capacity, new_size)), size(new_size) {
-        data = new int[capacity]();
-        for (int i = 0; i < size; i++) {
-            setvalue(new_data[i], i);
-        }
-    }
-
-    // Конструктор копирования
-    Muss(const Muss& other) : capacity(other.capacity), size(other.size) {
-        data = new int[capacity];
-        std::copy(other.data, other.data + size, data);
-    }
-
-    // Оператор присваивания
-    Muss& operator=(const Muss& other) {
-        if (this != &other) {
-            delete[] data;
-            capacity = other.capacity;
-            size = other.size;
-            data = new int[capacity];
-            std::copy(other.data, other.data + size, data);
-        }
-        return *this;
-    }
-
-    // Деструктор
-    virtual ~Muss() {
-        delete[] data;
-    }
+class PGMImageProcessor {
+private:
+    string filename_or;
+    int width, height;
+    int maxValue;
+    vector<uint8_t> pixelData;
+    string magicNumber;
+    vector<vector<string>> csv_data;
+    mt19937 rng;
     
-    // Сеттер 
-    bool setvalue(int value, int index) {
-        if (abs(value) > 100) {
-            std::cout << "Number not in [-100;100]" << std::endl;
+public:
+    PGMImageProcessor() : rng(random_device{}()) {
+        // Инициализируем CSV данные
+        csv_data = {
+            {"Название исходного файла", "Название отфильтрованного файла", "Размер Файла", "Метод фильтрации", "Среднее отклонение", "Сходство с оригиналом"}
+        };
+    }
+
+    // Функция для создания папки
+    bool createDirectory(const string& path) {
+#ifdef _WIN32
+        return _mkdir(path.c_str()) == 0;
+#else
+        return mkdir(path.c_str(), 0755) == 0;
+#endif
+    }
+
+    // Функция для проверки существования папки
+    bool directoryExists(const string& path) {
+#ifdef _WIN32
+        DWORD attrib = GetFileAttributesA(path.c_str());
+        return (attrib != INVALID_FILE_ATTRIBUTES && (attrib & FILE_ATTRIBUTE_DIRECTORY));
+#else
+        struct stat info;
+        return stat(path.c_str(), &info) == 0 && (info.st_mode & S_IFDIR);
+#endif
+    }
+
+    // Функция загрузки PGM файла
+    bool loadPGM(const string& filename) {
+        filename_or = filename;
+        ifstream file(filename, ios::binary);
+        if (!file) {
+            cerr << "Ошибка: не удалось открыть файл " << filename << endl;
             return false;
         }
-        if (index >= capacity) {
-            resize(index + 1);
+
+        file >> magicNumber;
+        if (magicNumber != "P5") {
+            cerr << "Ошибка: поддерживается только бинарный PGM (P5)" << endl;
+            return false;
         }
-        data[index] = value;
-        if (index >= size) {
-            size = index + 1;
+
+        skipComments(file);
+        file >> width >> height;
+        
+        skipComments(file);
+        file >> maxValue;
+        file.get();
+
+        cout << "Информация о PGM файле:" << endl;
+        cout << "  Формат: " << magicNumber << endl;
+        cout << "  Размер: " << width << "x" << height << endl;
+        cout << "  Макс. значение: " << maxValue << endl;
+
+        if (maxValue != 255) {
+            cerr << "Ошибка: поддерживается только max_value = 255" << endl;
+            return false;
         }
+
+        int dataSize = width * height;
+        pixelData.resize(dataSize);
+        file.read(reinterpret_cast<char*>(pixelData.data()), dataSize);
+
+        if (!file) {
+            cerr << "Ошибка чтения данных пикселей" << endl;
+            return false;
+        }
+
+        cout << "Файл успешно загружен! Пикселей: " << pixelData.size() << endl;
         return true;
     }
 
-    // Геттер
-    int get(int index) const {
-        if (index < 0 || index >= size) {
-            std::cout << "Index out of bounds" << std::endl;
-            return 0;
+    // Функция конвертации изображения в PGM
+    bool convertToPGM(const vector<uint8_t>& imageData, int imgWidth, int imgHeight, const string& outputFilename) {
+        // Создаем папку если её нет
+        string folderPath = getFolderPath(outputFilename);
+        if (!directoryExists(folderPath)) {
+            if (!createDirectory(folderPath)) {
+                cerr << "Ошибка создания папки: " << folderPath << endl;
+                return false;
+            }
         }
-        return data[index];
-    }
-
-    void print_data() const {
-        std::cout << "[";
-        for (int i = 0; i < size; i++) {
-            std::cout << data[i];
-            if (i < size - 1) std::cout << ", ";
+        
+        ofstream file(outputFilename, ios::binary);
+        if (!file) {
+            cerr << "Ошибка создания файла " << outputFilename << endl;
+            return false;
         }
-        std::cout << "]" << std::endl;
+
+        // Устанавливаем параметры PGM
+        width = imgWidth;
+        height = imgHeight;
+        maxValue = 255;
+        magicNumber = "P5";
+        pixelData = imageData;
+
+        file << magicNumber << "\n";
+        file << width << " " << height << "\n";
+        file << maxValue << "\n";
+        file.write(reinterpret_cast<const char*>(pixelData.data()), pixelData.size());
+
+        if (!file) {
+            cerr << "Ошибка записи данных" << endl;
+            return false;
+        }
+
+        cout << "Изображение успешно конвертировано в: " << outputFilename << endl;
+        return true;
     }
 
-    void resize(int newCapacity) {
-        int* newData = new int[newCapacity]();
-        std::copy(data, data + std::min(size, newCapacity), newData);
-        delete[] data;
-        data = newData;
-        capacity = newCapacity;
-        size = std::min(size, newCapacity);
-    }
-
-    void add_value(int value) {
-        setvalue(value, size);
-    }
-
-    // Виртуальный метод для экспорта данных
-    virtual void exportData() const {
-        std::cout << "Base export method - override in derived classes" << std::endl;
-    }
-
-    // Генерация имени файла с текущей датой и временем
-    std::string generateFilename(const std::string& extension) const {
-        auto now = std::chrono::system_clock::now();
-        auto time_t = std::chrono::system_clock::to_time_t(now);
+    // Функция создания тестового изображения (градиент)
+    bool createTestImage(int imgWidth, int imgHeight, const string& outputFilename) {
+        vector<uint8_t> testImage(imgWidth * imgHeight);
         
-        std::stringstream ss;
-        ss << std::put_time(std::localtime(&time_t), "%Y-%m-%d_%H-%M-%S");
-        return ss.str() + extension;
+        // Создаем градиентное изображение
+        for (int y = 0; y < imgHeight; y++) {
+            for (int x = 0; x < imgWidth; x++) {
+                uint8_t value = static_cast<uint8_t>((x * 255) / imgWidth);
+                testImage[y * imgWidth + x] = value;
+            }
+        }
+        
+        return convertToPGM(testImage, imgWidth, imgHeight, outputFilename);
     }
 
-    // Геттеры
-    int getsize() const { return size; }
-    int getcapacity() const { return capacity; }
-    const int* getdata() const { return data; }
-};
-
-// Класс для экспорта в TXT файл
-class ArrTxt : public Muss {
-public:
-    using Muss::Muss;  // Наследуем конструкторы
-
-    // Переопределяем метод экспорта
-    void exportData() const override {
-        std::string filename = generateFilename(".txt");
-        std::ofstream file(filename);
-        
-        if (!file.is_open()) {
-            std::cout << "Error: Cannot open file " << filename << std::endl;
+    // Функция добавления шумов на изображение
+    void addNoise(int noisePixelCount) {
+        if (pixelData.empty()) {
+            cerr << "Ошибка: нет загруженного изображения" << endl;
             return;
         }
-
-        // Записываем метаданные
-        file << "Array Data Export - TXT Format\n";
-        file << "Generated: " << getCurrentDateTime() << "\n";
-        file << "Size: " << size << "\n";
-        file << "Capacity: " << capacity << "\n";
-        file << "Data: ";
         
-        // Записываем элементы массива
-        for (int i = 0; i < size; i++) {
-            file << data[i];
-            if (i < size - 1) file << " ";
-        }
-        file << "\n";
-        
-        // Статистика
-        file << "Statistics:\n";
-        file << "Min: " << findMin() << "\n";
-        file << "Max: " << findMax() << "\n";
-        file << "Average: " << calculateAverage() << "\n";
-        
-        file.close();
-        std::cout << "Data exported to TXT file: " << filename << std::endl;
-    }
-
-private:
-    std::string getCurrentDateTime() const {
-        auto now = std::chrono::system_clock::now();
-        auto time_t = std::chrono::system_clock::to_time_t(now);
-        
-        std::stringstream ss;
-        ss << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S");
-        return ss.str();
-    }
-
-    int findMin() const {
-        if (size == 0) return 0;
-        return *std::min_element(data, data + size);
-    }
-
-    int findMax() const {
-        if (size == 0) return 0;
-        return *std::max_element(data, data + size);
-    }
-
-    double calculateAverage() const {
-        if (size == 0) return 0.0;
-        double sum = 0.0;
-        for (int i = 0; i < size; i++) {
-            sum += data[i];
-        }
-        return sum / size;
-    }
-};
-
-// Класс для экспорта в CSV файл
-class ArrCSV : public Muss {
-public:
-    using Muss::Muss;  // Наследуем конструкторы
-
-    // Переопределяем метод экспорта
-    void exportData() const override {
-        std::string filename = generateFilename(".csv");
-        std::ofstream file(filename);
-        
-        if (!file.is_open()) {
-            std::cout << "Error: Cannot open file " << filename << std::endl;
+        if (noisePixelCount <= 0) {
+            cout << "Количество шумовых пикселей должно быть положительным" << endl;
             return;
         }
-
-        // Заголовок CSV
-        file << "Index,Value\n";
         
-        // Данные в формате CSV
-        for (int i = 0; i < size; i++) {
-            file << i << "," << data[i] << "\n";
+        vector<uint8_t> originalData = pixelData;
+        uniform_int_distribution<int> distCoordX(0, width - 1);
+        uniform_int_distribution<int> distCoordY(0, height - 1);
+        uniform_int_distribution<int> distValue(0, 255);
+        
+        cout << "Добавление " << noisePixelCount << " шумовых пикселей..." << endl;
+        
+        for (int i = 0; i < noisePixelCount; i++) {
+            int x = distCoordX(rng);
+            int y = distCoordY(rng);
+            uint8_t noiseValue = static_cast<uint8_t>(distValue(rng));
+            
+            pixelData[y * width + x] = noiseValue;
         }
         
-        // Статистика в отдельной секции
-        file << "\nStatistics\n";
-        file << "Min," << findMin() << "\n";
-        file << "Max," << findMax() << "\n";
-        file << "Average," << calculateAverage() << "\n";
-        file << "Size," << size << "\n";
-        file << "Capacity," << capacity << "\n";
+        string noisyFilename = "./rezalts/noisy_" + to_string(noisePixelCount) + "_" + getBaseName(filename_or) + ".pgm";
+        savePGM(noisyFilename);
+        
+        // Сохраняем информацию о шумовом изображении в CSV
+        csv_data.push_back({
+            filename_or,
+            noisyFilename,
+            to_string(width) + "x" + to_string(height),
+            "Шумовые пиксели: " + to_string(noisePixelCount),
+            "N/A",
+            "N/A"
+        });
+        
+        cout << "Шумы добавлены. Зашумленное изображение сохранено как: " << noisyFilename << endl;
+    }
+
+    // МЕДИАННЫЙ ФИЛЬТР
+    void applyMedianFilter() {
+        if (pixelData.empty()) {
+            cerr << "Ошибка: нет загруженного изображения" << endl;
+            return;
+        }
+        
+        int val[3] = {3, 5, 7};
+        vector<uint8_t> originalData = pixelData;
+        
+        for (int k = 0; k < 3; k++){
+            int windowSize = val[k];
+            int radius = windowSize / 2;
+            
+            cout << "Применение медианного фильтра с окном " << windowSize << "x" << windowSize << endl;
+            
+            pixelData = originalData;
+            vector<uint8_t> tempData = pixelData;
+            
+            for (int j = radius; j < height - radius; j++) {
+                for (int i = radius; i < width - radius; i++) {
+                    vector<uint8_t> neighbors;
+                    
+                    for (int dj = -radius; dj <= radius; dj++) {
+                        for (int di = -radius; di <= radius; di++) {
+                            neighbors.push_back(tempData[(j + dj) * width + (i + di)]);
+                        }
+                    }
+                    
+                    sort(neighbors.begin(), neighbors.end());
+                    pixelData[j * width + i] = neighbors[neighbors.size() / 2];
+                }
+            }
+            
+            string outputFile = "./rezalts/med" + to_string(windowSize) + "_" + getBaseName(filename_or) + ".pgm";
+            savePGM(outputFile);
+            compareWithOriginal(tempData, "Медианный " + to_string(windowSize) + "x" + to_string(windowSize), outputFile);
+        }
+        
+        pixelData = originalData;
+    }
+
+    void skipComments(ifstream& file) {
+        char c;
+        while (file.get(c)) {
+            if (c == '#') {
+                string comment;
+                getline(file, comment);
+                cout << "  Пропущен комментарий: #" << comment << endl;
+            } else {
+                file.putback(c);
+                break;
+            }
+        }
+    }
+
+    bool savePGM(const string& filename) {
+        // Создаем папку если её нет
+        string folderPath = getFolderPath(filename);
+        if (!directoryExists(folderPath)) {
+            if (!createDirectory(folderPath)) {
+                cerr << "Ошибка создания папки: " << folderPath << endl;
+                return false;
+            }
+        }
+        
+        ofstream file(filename, ios::binary);
+        if (!file) {
+            cerr << "Ошибка создания файла " << filename << endl;
+            return false;
+        }
+
+        file << magicNumber << "\n";
+        file << width << " " << height << "\n";
+        file << maxValue << "\n";
+        file.write(reinterpret_cast<const char*>(pixelData.data()), pixelData.size());
+
+        if (!file) {
+            cerr << "Ошибка записи данных" << endl;
+            return false;
+        }
+
+        cout << "Файл успешно сохранен как: " << filename << endl;
+        return true;
+    }
+
+    void compareWithOriginal(const vector<uint8_t>& original, const string& filterName, const string& outputFilename) {
+        if (original.size() != pixelData.size()) {
+            cout << "Ошибка сравнения: размеры не совпадают!" << endl;
+            return;
+        }
+        
+        double total_diff = 0.0;
+        int total_pixels = pixelData.size();
+        
+        for (int i = 0; i < total_pixels; i++) {
+            total_diff += abs(static_cast<int>(pixelData[i]) - static_cast<int>(original[i]));
+        }
+        
+        double avg_diff = total_diff / total_pixels;
+        double similarity = (1.0 - (avg_diff / 255.0)) * 100.0;
+        
+        cout << "Фильтр " << filterName << ":" << endl;
+        cout << "  Среднее отклонение: " << avg_diff << endl;
+        cout << "  Сходство с оригиналом: " << similarity << "%" << endl;
+        
+        // Добавляем данные в CSV
+        csv_data.push_back({
+            filename_or,
+            outputFilename,
+            to_string(width) + "x" + to_string(height),
+            filterName,
+            to_string(avg_diff),
+            to_string(similarity) + "%"
+        });
+    }
+
+    void writeToCSV(const string& filename) {
+        // Создаем папку если её нет
+        string folderPath = getFolderPath(filename);
+        if (!directoryExists(folderPath)) {
+            if (!createDirectory(folderPath)) {
+                cerr << "Ошибка создания папки для CSV: " << folderPath << endl;
+            }
+        }
+        
+        ofstream file(filename);
+        
+        if (!file.is_open()) {
+            cerr << "Ошибка открытия файла: " << filename << endl;
+            return;
+        }
+        
+        for (const auto& row : csv_data) {
+            for (size_t i = 0; i < row.size(); i++) {
+                file << row[i];
+                if (i < row.size() - 1) {
+                    file << ";";
+                }
+            }
+            file << "\n";
+        }
         
         file.close();
-        std::cout << "Data exported to CSV file: " << filename << std::endl;
+        cout << "Данные записаны в: " << filename << endl;
     }
+
+    // Геттер для получения данных изображения
+    const vector<uint8_t>& getPixelData() const { return pixelData; }
+    int getWidth() const { return width; }
+    int getHeight() const { return height; }
 
 private:
-    int findMin() const {
-        if (size == 0) return 0;
-        return *std::min_element(data, data + size);
-    }
-
-    int findMax() const {
-        if (size == 0) return 0;
-        return *std::max_element(data, data + size);
-    }
-
-    double calculateAverage() const {
-        if (size == 0) return 0.0;
-        double sum = 0.0;
-        for (int i = 0; i < size; i++) {
-            sum += data[i];
+    string getBaseName(const string& path) {
+        size_t lastSlash = path.find_last_of("/\\");
+        size_t lastDot = path.find_last_of(".");
+        if (lastSlash != string::npos) {
+            if (lastDot != string::npos && lastDot > lastSlash) {
+                return path.substr(lastSlash + 1, lastDot - lastSlash - 1);
+            }
+            return path.substr(lastSlash + 1);
         }
-        return sum / size;
+        return path;
+    }
+    
+    string getFolderPath(const string& filename) {
+        size_t lastSlash = filename.find_last_of("/\\");
+        if (lastSlash != string::npos) {
+            return filename.substr(0, lastSlash);
+        }
+        return ".";
     }
 };
-
-// Функция для демонстрации полиморфизма
-void exportArrayData(const Muss& array) {
-    array.exportData();
-}
-
-// Функция для демонстрации полиморфизма через указатель
-void exportArrayDataPtr(const Muss* array) {
-    array->exportData();
-}
 
 int main() {
-    std::cout << "=== Array Export Demonstration ===" << std::endl;
+    setlocale(LC_ALL, "Russian");
     
-    // Создаем тестовые данные
-    int testData[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    int testSize = 10;
-
-    // Создаем объекты разных типов
-    ArrTxt txtArray(testData, testSize);
-    ArrCSV csvArray(testData, testSize);
-    Muss baseArray(testData, testSize);
-
-    std::cout << "\n1. Testing ArrTxt export:" << std::endl;
-    txtArray.print_data();
-    txtArray.exportData();  // Вызов через объект
-
-    std::cout << "\n2. Testing ArrCSV export:" << std::endl;
-    csvArray.print_data();
-    csvArray.exportData();  // Вызов через объект
-
-    std::cout << "\n3. Testing polymorphism with references:" << std::endl;
-    exportArrayData(txtArray);  // Будет вызван ArrTxt::exportData()
-    exportArrayData(csvArray);  // Будет вызван ArrCSV::exportData()
-    exportArrayData(baseArray); // Будет вызван Muss::exportData()
-
-    std::cout << "\n4. Testing polymorphism with pointers:" << std::endl;
-    Muss* arrays[] = {&txtArray, &csvArray, &baseArray};
+    PGMImageProcessor processor;
     
-    for (int i = 0; i < 3; i++) {
-        exportArrayDataPtr(arrays[i]);
+    // Создаем папку для результатов
+    if (!processor.directoryExists("./rezalts")) {
+        if (processor.createDirectory("./rezalts")) {
+            cout << "Создана папка для результатов: ./rezalts" << endl;
+        } else {
+            cerr << "Ошибка создания папки ./rezalts" << endl;
+        }
     }
-
-    std::cout << "\n5. Testing with different data:" << std::endl;
-    int randomData[] = {5, -2, 8, 1, -9, 3, 7, -4, 6};
-    ArrTxt randomTxtArray(randomData, 9);
-    ArrCSV randomCsvArray(randomData, 9);
     
-    randomTxtArray.exportData();
-    randomCsvArray.exportData();
-
+    int choice;
+    cout << "=== PGM ИМАДЖ ПРОЦЕССОР ===" << endl;
+    cout << "1. Обработать существующие PGM файлы" << endl;
+    cout << "2. Создать тестовое изображение и добавить шумы" << endl;
+    cout << "Выберите опцию: ";
+    cin >> choice;
+    
+    if (choice == 1) {
+        // Обработка существующих файлов
+        vector<string> files = {
+            "./Date/1.pgm", 
+            "./Date/2.pgm", 
+            "./Date/3.pgm", 
+            "./Date/4.pgm", 
+            "./Date/5.pgm", 
+            "./Date/6.pgm"
+        };
+        
+        for (int i = 0; i < files.size(); i++){
+            cout << "\n=== ОБРАБОТКА ФАЙЛА " << (i+1) << ": " << files[i] << " ===" << endl;
+            
+            if (processor.loadPGM(files[i])) {
+                // Добавляем шумы
+                int noiseCount;
+                cout << "Введите количество шумовых пикселей: ";
+                cin >> noiseCount;
+                processor.addNoise(noiseCount);
+                
+                // Применяем медианный фильтр
+                processor.applyMedianFilter();
+            }
+            cout << "==============================================" << endl;
+        }
+    } else if (choice == 2) {
+        // Создание тестового изображения
+        int width, height, noiseCount;
+        cout << "Введите ширину изображения: ";
+        cin >> width;
+        cout << "Введите высоту изображения: ";
+        cin >> height;
+        cout << "Введите количество шумовых пикселей: ";
+        cin >> noiseCount;
+        
+        string testFilename = "./rezalts/test_image.pgm";
+        if (processor.createTestImage(width, height, testFilename)) {
+            if (processor.loadPGM(testFilename)) {
+                processor.addNoise(noiseCount);
+                processor.applyMedianFilter();
+            }
+        }
+    } else {
+        cout << "Неверный выбор!" << endl;
+        return 1;
+    }
+    
+    // Сохраняем все результаты в один CSV файл
+    processor.writeToCSV("./rezalts/Rezalt.csv");
+    
+    cout << "\n=== ОБРАБОТКА ЗАВЕРШЕНА ===" << endl;
+    cout << "Результаты сохранены в ./rezalts/Rezalt.csv" << endl;
+    
     return 0;
 }
