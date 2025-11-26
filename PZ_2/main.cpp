@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <algorithm>
 #include <numeric>
+#include <random>
 
 #ifdef _WIN32
     #include <windows.h>
@@ -25,9 +26,10 @@ private:
     vector<uint8_t> pixelData;
     string magicNumber;
     vector<vector<string>> csv_data;
+    mt19937 rng;
     
 public:
-    PGMImageProcessor() {
+    PGMImageProcessor() : rng(random_device{}()) {
         // Инициализируем CSV данные
         csv_data = {
             {"Название исходного файла", "Название отфильтрованного файла", "Размер Файла", "Метод фильтрации", "Среднее отклонение", "Сходство с оригиналом"}
@@ -54,6 +56,7 @@ public:
 #endif
     }
 
+    // Функция загрузки PGM файла
     bool loadPGM(const string& filename) {
         filename_or = filename;
         ifstream file(filename, ios::binary);
@@ -98,75 +101,109 @@ public:
         return true;
     }
 
-    void skipComments(ifstream& file) {
-        char c;
-        while (file.get(c)) {
-            if (c == '#') {
-                string comment;
-                getline(file, comment);
-                cout << "  Пропущен комментарий: #" << comment << endl;
-            } else {
-                file.putback(c);
-                break;
-            }
-        }
-    }
-    
-    // СКОЛЬЗЯЩЕЕ СРЕДНЕЕ 
-    void slidingAverage() {
-        cout << "Начало удаления шумов (скользящее среднее)." << endl;
-        vector<uint8_t> originalData = pixelData;
-        vector<uint8_t> tempData = pixelData;
-        
-        for (int j = 1; j < height - 1; j++) {
-            for (int i = 1; i < width - 1; i++) {
-                int index = j * width + i;
-        
-                int sum = 
-                    tempData[(j-1) * width + (i-1)] + tempData[(j-1) * width + i] + tempData[(j-1) * width + (i+1)] +
-                    tempData[j * width + (i-1)]     + tempData[index]               + tempData[j * width + (i+1)] +
-                    tempData[(j+1) * width + (i-1)] + tempData[(j+1) * width + i] + tempData[(j+1) * width + (i+1)];
-                
-                pixelData[index] = static_cast<uint8_t>(sum / 9);
+    // Функция конвертации изображения в PGM
+    bool convertToPGM(const vector<uint8_t>& imageData, int imgWidth, int imgHeight, const string& outputFilename) {
+        // Создаем папку если её нет
+        string folderPath = getFolderPath(outputFilename);
+        if (!directoryExists(folderPath)) {
+            if (!createDirectory(folderPath)) {
+                cerr << "Ошибка создания папки: " << folderPath << endl;
+                return false;
             }
         }
         
-        string outputFile = "./rezalts/sr_" + getBaseName(filename_or) + ".pgm";
-        savePGM(outputFile);
-        compareWithOriginal(originalData, "Скользящее среднее", outputFile);
-        
-        cout << "Удаление завершено" << endl;
+        ofstream file(outputFilename, ios::binary);
+        if (!file) {
+            cerr << "Ошибка создания файла " << outputFilename << endl;
+            return false;
+        }
+
+        // Устанавливаем параметры PGM
+        width = imgWidth;
+        height = imgHeight;
+        maxValue = 255;
+        magicNumber = "P5";
+        pixelData = imageData;
+
+        file << magicNumber << "\n";
+        file << width << " " << height << "\n";
+        file << maxValue << "\n";
+        file.write(reinterpret_cast<const char*>(pixelData.data()), pixelData.size());
+
+        if (!file) {
+            cerr << "Ошибка записи данных" << endl;
+            return false;
+        }
+
+        cout << "Изображение успешно конвертировано в: " << outputFilename << endl;
+        return true;
     }
 
-    // БЕГУЩЕЕ СРЕДНЕЕ
-    void run_sr(){
-        cout << "Начало удаления шумов (бегущее среднее)." << endl;
-        vector<uint8_t> originalData = pixelData;
+    // Функция создания тестового изображения (градиент)
+    bool createTestImage(int imgWidth, int imgHeight, const string& outputFilename) {
+        vector<uint8_t> testImage(imgWidth * imgHeight);
         
-        int testCount = 1;
-        for (float k = 0.1; k < 1; k += 0.2){
-            pixelData = originalData;
-            vector<uint8_t> tempData = pixelData;
-            
-            for (int j = 0; j < height; j++) {
-                float filtered = pixelData[j * width];
-                for (int i = 1; i < width; i++) {
-                    filtered += (pixelData[j * width + i] - filtered) * k;
-                    pixelData[j * width + i] = static_cast<uint8_t>(filtered);
-                }
+        // Создаем градиентное изображение
+        for (int y = 0; y < imgHeight; y++) {
+            for (int x = 0; x < imgWidth; x++) {
+                uint8_t value = static_cast<uint8_t>((x * 255) / imgWidth);
+                testImage[y * imgWidth + x] = value;
             }
-            
-            string outputFile = "./rezalts/run_k" + to_string(int(k * 10)) + "_" + getBaseName(filename_or) + ".pgm";
-            savePGM(outputFile);
-            compareWithOriginal(tempData, "Бегущее среднее k=" + to_string(k), outputFile);
-            testCount++;
         }
         
-        pixelData = originalData;
+        return convertToPGM(testImage, imgWidth, imgHeight, outputFilename);
+    }
+
+    // Функция добавления шумов на изображение
+    void addNoise(int noisePixelCount) {
+        if (pixelData.empty()) {
+            cerr << "Ошибка: нет загруженного изображения" << endl;
+            return;
+        }
+        
+        if (noisePixelCount <= 0) {
+            cout << "Количество шумовых пикселей должно быть положительным" << endl;
+            return;
+        }
+        
+        vector<uint8_t> originalData = pixelData;
+        uniform_int_distribution<int> distCoordX(0, width - 1);
+        uniform_int_distribution<int> distCoordY(0, height - 1);
+        uniform_int_distribution<int> distValue(0, 255);
+        
+        cout << "Добавление " << noisePixelCount << " шумовых пикселей..." << endl;
+        
+        for (int i = 0; i < noisePixelCount; i++) {
+            int x = distCoordX(rng);
+            int y = distCoordY(rng);
+            uint8_t noiseValue = static_cast<uint8_t>(distValue(rng));
+            
+            pixelData[y * width + x] = noiseValue;
+        }
+        
+        string noisyFilename = "./rezalts/noisy_" + to_string(noisePixelCount) + "_" + getBaseName(filename_or) + ".pgm";
+        savePGM(noisyFilename);
+        
+        // Сохраняем информацию о шумовом изображении в CSV
+        csv_data.push_back({
+            filename_or,
+            noisyFilename,
+            to_string(width) + "x" + to_string(height),
+            "Шумовые пиксели: " + to_string(noisePixelCount),
+            "N/A",
+            "N/A"
+        });
+        
+        cout << "Шумы добавлены. Зашумленное изображение сохранено как: " << noisyFilename << endl;
     }
 
     // МЕДИАННЫЙ ФИЛЬТР
-    void med(){
+    void applyMedianFilter() {
+        if (pixelData.empty()) {
+            cerr << "Ошибка: нет загруженного изображения" << endl;
+            return;
+        }
+        
         int val[3] = {3, 5, 7};
         vector<uint8_t> originalData = pixelData;
         
@@ -174,7 +211,7 @@ public:
             int windowSize = val[k];
             int radius = windowSize / 2;
             
-            cout << "Медианный фильтр с окном " << windowSize << "x" << windowSize << endl;
+            cout << "Применение медианного фильтра с окном " << windowSize << "x" << windowSize << endl;
             
             pixelData = originalData;
             vector<uint8_t> tempData = pixelData;
@@ -200,6 +237,20 @@ public:
         }
         
         pixelData = originalData;
+    }
+
+    void skipComments(ifstream& file) {
+        char c;
+        while (file.get(c)) {
+            if (c == '#') {
+                string comment;
+                getline(file, comment);
+                cout << "  Пропущен комментарий: #" << comment << endl;
+            } else {
+                file.putback(c);
+                break;
+            }
+        }
     }
 
     bool savePGM(const string& filename) {
@@ -293,6 +344,11 @@ public:
         cout << "Данные записаны в: " << filename << endl;
     }
 
+    // Геттер для получения данных изображения
+    const vector<uint8_t>& getPixelData() const { return pixelData; }
+    int getWidth() const { return width; }
+    int getHeight() const { return height; }
+
 private:
     string getBaseName(const string& path) {
         size_t lastSlash = path.find_last_of("/\\");
@@ -318,15 +374,6 @@ private:
 int main() {
     setlocale(LC_ALL, "Russian");
     
-    vector<string> files = {
-        "./Date/1.pgm", 
-        "./Date/2.pgm", 
-        "./Date/3.pgm", 
-        "./Date/4.pgm", 
-        "./Date/5.pgm", 
-        "./Date/6.pgm"
-    };
-    
     PGMImageProcessor processor;
     
     // Создаем папку для результатов
@@ -338,22 +385,66 @@ int main() {
         }
     }
     
-    for (int i = 0; i < files.size(); i++){
-        cout << "\n=== ОБРАБОТКА ФАЙЛА " << (i+1) << ": " << files[i] << " ===" << endl;
+    int choice;
+    cout << "=== PGM ИМАДЖ ПРОЦЕССОР ===" << endl;
+    cout << "1. Обработать существующие PGM файлы" << endl;
+    cout << "2. Создать тестовое изображение и добавить шумы" << endl;
+    cout << "Выберите опцию: ";
+    cin >> choice;
+    
+    if (choice == 1) {
+        // Обработка существующих файлов
+        vector<string> files = {
+            "./Date/1.pgm", 
+            "./Date/2.pgm", 
+            "./Date/3.pgm", 
+            "./Date/4.pgm", 
+            "./Date/5.pgm", 
+            "./Date/6.pgm"
+        };
         
-        if (processor.loadPGM(files[i])) {
-            processor.slidingAverage();
-            processor.run_sr();
-            processor.med();
+        for (int i = 0; i < files.size(); i++){
+            cout << "\n=== ОБРАБОТКА ФАЙЛА " << (i+1) << ": " << files[i] << " ===" << endl;
+            
+            if (processor.loadPGM(files[i])) {
+                // Добавляем шумы
+                int noiseCount;
+                cout << "Введите количество шумовых пикселей: ";
+                cin >> noiseCount;
+                processor.addNoise(noiseCount);
+                
+                // Применяем медианный фильтр
+                processor.applyMedianFilter();
+            }
+            cout << "==============================================" << endl;
         }
-        cout << "==============================================" << endl;
+    } else if (choice == 2) {
+        // Создание тестового изображения
+        int width, height, noiseCount;
+        cout << "Введите ширину изображения: ";
+        cin >> width;
+        cout << "Введите высоту изображения: ";
+        cin >> height;
+        cout << "Введите количество шумовых пикселей: ";
+        cin >> noiseCount;
+        
+        string testFilename = "./rezalts/test_image.pgm";
+        if (processor.createTestImage(width, height, testFilename)) {
+            if (processor.loadPGM(testFilename)) {
+                processor.addNoise(noiseCount);
+                processor.applyMedianFilter();
+            }
+        }
+    } else {
+        cout << "Неверный выбор!" << endl;
+        return 1;
     }
     
     // Сохраняем все результаты в один CSV файл
-    processor.writeToCSV("Rezalt.csv");
+    processor.writeToCSV("./rezalts/Rezalt.csv");
     
-    cout << "\n=== ВСЕ ФАЙЛЫ ОБРАБОТАНЫ ===" << endl;
-    cout << "Результаты сохранены в Rezalt.csv" << endl;
+    cout << "\n=== ОБРАБОТКА ЗАВЕРШЕНА ===" << endl;
+    cout << "Результаты сохранены в ./rezalts/Rezalt.csv" << endl;
     
     return 0;
 }
