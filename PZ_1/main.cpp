@@ -2,9 +2,9 @@
 #include <cstdlib>
 #include <algorithm>  // для sort, min_element, max_element
 
-// Базовый класс Muss (ваш исходный класс с небольшими исправлениями)
+
 class Muss {
-protected:  // изменено с private на protected для доступа в наследнике
+protected:  
     int *data;
     int size;
     int capacity;
