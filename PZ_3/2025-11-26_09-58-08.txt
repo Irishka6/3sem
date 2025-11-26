@@ -1,0 +1,9 @@
+Array Data Export - TXT Format
+Generated: 2025-11-26 09:58:08
+Size: 9
+Capacity: 10
+Data: 5 -2 8 1 -9 3 7 -4 6
+Statistics:
+Min: -9
+Max: 8
+Average: 1.66667
